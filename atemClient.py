@@ -281,8 +281,8 @@ class BMDSSDataFactory(ReconnectingClientFactory):
             reactor.callLater(2,self.startReceiver)
         
 class AtemStudioClient(service.MultiService):    
-    """Connects to a Blackmagic Atem TV Studio and received the captured video"""
-    def __init__(self, delegate=None,host='localhost',port=13823):
+    """Connects to a Blackmagic Atem TV Studio and receives the captured video"""
+    def __init__(self, delegate=None,host='localhost',port=13824):
         service.MultiService.__init__(self)
         if delegate:
             self.delegate = delegate
@@ -320,6 +320,7 @@ class AtemStudioClient(service.MultiService):
             
             log.msg("All running!!!111")
             self.atemDataFactory.startReceiver()
+        
         
         d.addCallback(allRunning)
         d.addErrback(log.err)
@@ -364,43 +365,22 @@ print "Hostname %s" % kniveServerHostname
 
         
 application = service.Application("Blackmagic DSS Client")
-
-
-#-vcodec libx264 -vpre veryfast -vpre main -b 500k -crf 22 -threads 0 -level 30 -r 25 -g 25 -async 2 -
-masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("fast","main"),crf="22",b='1200k',maxrate='1500k',bufsize='1500k',threads=0,level="30",r=25,g=25,acodec='copy',f="mpegts"))
-masterEncoder.delegate = foundation.KNDistributor()
-masterEncoder.delegate.addOutlet(files.FileWriter('/var/tmp/',filename='atem_encoded',suffix='.ts'))
-# masterEncoder.delegate.addOutlet(tcpts.TCPTSClient(kniveServerHostname,3333,secret='123123asd'))
-
-class TestDelegate(object):
-    """docstring for TestDelegate"""
-    implements(foundation.IKNOutlet)
-    def __init__(self, arg):
-        super(TestDelegate, self).__init__()
-        self.arg = arg
-        
-    def dataReceived(self,data):
-        """docstring for write"""
-        pass
-        
-    def startService(self):
-        """docstring for startService"""
-        d = Deferred()
-        d.callback('bla')
-        return d
-        
-
 atemClient = AtemStudioClient()
-atemClient.delegate = foundation.KNDistributor()
-# atemClient.delegate = TestDelegate(1)
-
-# atemClient.delegate.addOutlet(masterEncoder)
-atemClient.delegate.addOutlet(files.FileWriter('/var/tmp/',filename='atem_encoded',suffix='.ts'))
-atemClient.delegate.addOutlet(tcpts.TCPTSClient(kniveServerHostname,3333,secret='123123asd'))
-
-
 atemClient.setName('atem')
 atemClient.setServiceParent(application)
+
+#-vcodec libx264 -vpre veryfast -vpre main -b 500k -crf 22 -threads 0 -level 30 -r 25 -g 25 -async 2 -
+#masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("fast","main"),crf="22",b='800k',maxrate='1100k',bufsize='1100k',threads=0,level="30",r=25,g=25,acodec='copy',f="mpegts"))
+masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("veryfast","main"),crf="24",b='1000k',maxrate='1200k',bufsize='1200k',threads=0,level="30",r=25,g=25,acodec='copy',f="mpegts"))
+
+masterEncoder.delegate = foundation.KNDistributor()
+masterEncoder.delegate.addOutlet(files.FileWriter('/var/tmp/',filename='atem_encoded',suffix='.ts'))
+#masterEncoder.delegate.addOutlet(tcpts.TCPTSClient(kniveServerHostname,3333,secret='123123asd'))
+atemClient.delegate = masterEncoder
+
+
+
+
 
 atemClient.startService()
 
