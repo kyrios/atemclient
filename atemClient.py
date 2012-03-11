@@ -1,20 +1,38 @@
 #!/usr/bin/env python
+#
+# atemClient.py
+# Copyright (c) 2012 Thorsten Philipp <kyrios@kyri0s.de>
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of
+# this software and associated documentation files (the "Software"), to deal in the 
+# Software without restriction, including without limitation the rights to use, copy,
+# modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, 
+# and to permit persons to whom the Software is furnished to do so, subject to the
+# following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+# PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+# HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION 
+# OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+# SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
 
 from knive import foundation
-from knive import files
+# from knive import files
 from knive import ffmpeg
 from knive import tcpts
+from zope.interface         import implements
 from twisted.application            import service, internet
-from twisted.internet.protocol      import ReconnectingClientFactory, ClientFactory, Protocol
+from twisted.internet.protocol      import ReconnectingClientFactory, Protocol
 from twisted.protocols.basic        import LineReceiver
 from twisted.python                 import log, usage
-from twisted.internet               import protocol, reactor
+from twisted.internet               import reactor
 from twisted.internet.defer         import Deferred
-from zope.interface                 import implements
-from twisted.internet.endpoints     import TCP4ClientEndpoint
-from twisted.internet.interfaces    import IProtocol
 
-import time
 import types
 import ConfigParser
 import logging
@@ -62,6 +80,7 @@ class BMDSSLineProtocol(LineReceiver):
     lineFree = False
     Set = False
     stopEncodingDeferred = None
+    encodingSet = False
     
     def connectionMade(self):
         log.msg("Connection established")
@@ -105,7 +124,10 @@ class BMDSSLineProtocol(LineReceiver):
         if self.lineFree:
             if not self.encodingSet:
                 raise(Exception('Encoding parameters not valid. Can\'t start'))
-            if self.factory.deviceStatus != 'idle':
+            if self.factory.deviceStatus == 'booting':
+                log.msg('Device is booting. Waiting')
+                reactor.callLater(5,self.startEncoding)
+            elif self.factory.deviceStatus != 'idle':
                 log.msg('Device not idle. Restarting (%s)' % self.factory.deviceStatus)
                 self.commandQueue.append(self.stopEncoding)
                 reactor.callLater(2,self.refreshDeviceStatus)
@@ -142,13 +164,13 @@ class BMDSSLineProtocol(LineReceiver):
             self.lastCommand = command
             self.lastCommandType = commandtype
             if arguments:
-                #log.msg('-> Sending %s -id %s -%s %s' % (commandtype,self.factory.channel,command,arguments))
+                log.msg('-> Sending %s -id %s -%s %s' % (commandtype,self.factory.channel,command,arguments))
                 self.transport.write('%s -id %s -%s %s\n' % (commandtype,self.factory.channel,command,arguments))
             elif command:
-                #log.msg('-> Sending %s -id %s -%s' % (commandtype,self.factory.channel,command))
+                log.msg('-> Sending %s -id %s -%s' % (commandtype,self.factory.channel,command))
                 self.transport.write('%s -id %s -%s\n' % (commandtype,self.factory.channel,command))
             else:
-                #log.msg('-> Sending %s -id %s' % (commandtype,self.factory.channel))
+                log.msg('-> Sending %s -id %s' % (commandtype,self.factory.channel))
                 self.transport.write('%s -id %s\n' % (commandtype,self.factory.channel))
         else:
             if arguments:
@@ -165,7 +187,7 @@ class BMDSSLineProtocol(LineReceiver):
             
     def lineReceived(self,line):
         """docstring for lineReceived"""
-        #log.msg("<- " +line)
+        log.msg("<- " +line)
         if self.initializing:
             if line.startswith('arrived'):
                 paras = line.split(' ')
@@ -219,6 +241,9 @@ class BMDSSLineProtocol(LineReceiver):
                     self.stopEncodingDeferred.callback(None)
                 except:
                     pass
+            elif(line == 'device: %s booting' % self.factory.channel):
+                self.factory.deviceStatus = 'booting'
+                self.printDeviceStatus()
             else:
                 log.err('Received unexpected data: %s' % line)
             self.lineFree = True
@@ -235,12 +260,23 @@ class BMDSSLineFactory(ReconnectingClientFactory):
          self.protocol = BMDSSLineProtocol()
          self.protocol.factory = self
          return self.protocol
-         
-    def clientConnectionLost(self, connector, reason):
-        print 'Lost connection.  Reason:', reason
 
     def clientConnectionFailed(self, connector, reason):
-        print 'Connection failed. Reason:', reason
+        log.msg('connection failed: %s %s' % (connector,reason))
+        if self.continueTrying:
+            self.connector = connector
+            self.retry()
+    
+    def clientConnectionLost(self, connector, reason):
+        log.err('connection lost: %s' % reason)
+        if self.continueTrying:
+            self.connector = connector
+            self.retry() 
+    # def clientConnectionLost(self, connector, reason):
+    #     print 'Lost connection.  Reason:', reason
+
+    # def clientConnectionFailed(self, connector, reason):
+    #     print 'Connection failed. Reason:', reason
 
     def stopEncoding(self):
         """docstring for stopEncoding"""
@@ -258,12 +294,24 @@ class BMDSSDataFactory(ReconnectingClientFactory):
          self.protocol = BMDSSDataProtocol()
          self.protocol.factory = self
          return self.protocol
-         
-    def clientConnectionLost(self, connector, reason):
-        print 'Lost connection.  Reason:', reason
 
     def clientConnectionFailed(self, connector, reason):
-        print 'Connection failed. Reason:', reason
+        log.err('connection failed: %s' % reason)
+        if self.continueTrying:
+            self.connector = connector
+            self.retry()
+    
+    def clientConnectionLost(self, connector, reason):
+        log.err('connection lost: %s' % reason)
+        if self.continueTrying:
+            self.connector = connector
+            self.retry()
+         
+    # def clientConnectionLost(self, connector, reason):
+    #     print 'Lost connection.  Reason:', reason
+
+    # def clientConnectionFailed(self, connector, reason):
+    #     print 'Connection failed. Reason:', reason
 
     def setSignaling(self,signalingFactory):
         """docstring for setSignaling"""
@@ -278,16 +326,21 @@ class BMDSSDataFactory(ReconnectingClientFactory):
             self.signalingFactory.startEncoding()
         else:
             print "Not ready yet"
+            #print self.signalingFactory
+            #print self.signalingFactory.deviceStatus
             reactor.callLater(2,self.startReceiver)
         
-class AtemStudioClient(service.MultiService):    
+class AtemStudioClient(foundation.KNInlet, service.MultiService):    
     """Connects to a Blackmagic Atem TV Studio and receives the captured video"""
-    def __init__(self, delegate=None,host='localhost',port=13824):
-        service.MultiService.__init__(self)
-        if delegate:
-            self.delegate = delegate
+    implements(service.IServiceCollection)
+
+    def __init__(self,host='localhost',port=13823):
+        super(AtemStudioClient,self).__init__(name='AtemStudioClient')
         self.host = host
         self.port = port
+        self.services = []
+        self.namedServices = {}
+        self.parent = None
         
         self.atemSignallingFactory = BMDSSLineFactory()
         self.atemDataFactory = BMDSSDataFactory()
@@ -300,36 +353,18 @@ class AtemStudioClient(service.MultiService):
         atemSignalling.setServiceParent(self)
         atemData.setName('Atem Data Connection')
         atemData.setServiceParent(self)
-        
-    def __setattr__(self,name,value):
-        """docstring for setDelegate"""
-        if name == 'delegate':
-            self.__dict__[name] = foundation.IKNOutlet(value)
-        else:
-            self.__dict__[name] = value
-        
-    def startService(self):
-        log.msg("Starting %s" % self)
-        service.MultiService.startService(self)
+
+
+    def _willStart(self):
         self.atemDataFactory.setSignaling(self.atemSignallingFactory)
+
         
-        d = self.delegate.startService()
-        
-        def allRunning(result):
-            """docstring for allRunning"""
-            
-            log.msg("All running!!!111")
-            self.atemDataFactory.startReceiver()
-        
-        
-        d.addCallback(allRunning)
-        d.addErrback(log.err)
-        
-    
-    def stopService(self):
-        """docstring for stopService"""
-        return(self.atemSignallingFactory.stopEncoding())
-        
+    def _start(self):
+        log.msg("Starting %s" % self)
+        self.startService()
+        self.atemDataFactory.startReceiver()
+
+
 
         
         
@@ -373,16 +408,13 @@ atemClient.setServiceParent(application)
 #masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("fast","main"),crf="22",b='800k',maxrate='1100k',bufsize='1100k',threads=0,level="30",r=25,g=25,acodec='copy',f="mpegts"))
 masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("veryfast","main"),crf="24",b='1000k',maxrate='1200k',bufsize='1200k',threads=0,level="30",r=25,g=25,acodec='copy',f="mpegts"))
 
-masterEncoder.delegate = foundation.KNDistributor()
-masterEncoder.delegate.addOutlet(files.FileWriter('/var/tmp/',filename='atem_encoded',suffix='.ts'))
-#masterEncoder.delegate.addOutlet(tcpts.TCPTSClient(kniveServerHostname,3333,secret='123123asd'))
-atemClient.delegate = masterEncoder
+# masterEncoder.delegate.addOutlet(files.FileWriter('/var/tmp/',filename='atem_encoded',suffix='.ts'))
+masterEncoder.addOutlet(tcpts.TCPTSClient(kniveServerHostname,3333,secret='123123asd'))
+masterEncoder.setInlet(atemClient)
 
 
 
-
-
-atemClient.startService()
+atemClient.start()
 
 
 reactor.run()
