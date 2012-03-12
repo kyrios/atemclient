@@ -62,7 +62,7 @@ class BMDSSDataProtocol(Protocol):
     def dataReceived(self,data):
         """docstring for dataReceived"""
         self.bytes += len(data)
-        self.factory.service.delegate.dataReceived(data)
+        self.factory.service.sendDataToAllOutlets(data)
         
     def progress(self):
         """docstring for progress"""
@@ -81,15 +81,16 @@ class BMDSSLineProtocol(LineReceiver):
     Set = False
     stopEncodingDeferred = None
     encodingSet = False
+    gotResponse = True
     
     def connectionMade(self):
         log.msg("Connection established")
         self.delimiter = '\n'
-        self.transport.write('notify\n')
+        self.sendCommand('notify',force=True)
         self.sendCommand('get','device')
         self.sendCommand('get','encoding')
-        self.sendCommand('validate','encoding','-fps 25p -srcx 0 -srcy 0 -srcw 1280 -srch 720 -dstw 1280 -dsth 720 -vkbps 5500 -profile high -level 40 -cabac 1 -bframes 1 -arate 48000 -achannels 2 -abits 16 -akbps 128 -preset 1')
-        self.sendCommand('set','encoding','-fps 25p -srcx 0 -srcy 0 -srcw 1280 -srch 720 -dstw 1280 -dsth 720 -vkbps 5500 -profile high -level 40 -cabac 1 -bframes 1 -arate 48000 -achannels 2 -abits 16 -akbps 128 -preset 1')
+        self.sendCommand('validate','encoding','-fps 50p -srcx 0 -srcy 0 -srcw 1280 -srch 720 -dstw 1280 -dsth 720 -vkbps 5500 -profile high -level 40 -cabac 1 -bframes 1 -arate 48000 -achannels 2 -abits 16 -akbps 256 -preset 1')
+        self.sendCommand('set','encoding','-fps 50p -srcx 0 -srcy 0 -srcw 1280 -srch 720 -dstw 1280 -dsth 720 -vkbps 5500 -profile high -level 40 -cabac 1 -bframes 1 -arate 48000 -achannels 2 -abits 16 -akbps 256 -preset 1')
         #reactor.callLater(10,self.stopEncoding)
         
     def workFromQueue(self):
@@ -121,6 +122,7 @@ class BMDSSLineProtocol(LineReceiver):
           
     def startEncoding(self):
         """docstring for startEncoding"""
+        log.msg('Starting encoding')
         if self.lineFree:
             if not self.encodingSet:
                 raise(Exception('Encoding parameters not valid. Can\'t start'))
@@ -155,23 +157,25 @@ class BMDSSLineProtocol(LineReceiver):
         self.transport.loseConnection()
         log.msg("Sent stop")
         
-    def sendCommand(self,commandtype,command=None,arguments=None):
+    def sendCommand(self,commandtype,command=None,arguments=None,force=False):
         """docstring for sendCommand"""
-        if self.lineFree:
-            if not self.factory.channel:
-                raise(Exception("Channel can't be none"))
+        if (self.lineFree or force):
             self.lineFree = False
             self.lastCommand = command
             self.lastCommandType = commandtype
             if arguments:
-                log.msg('-> Sending %s -id %s -%s %s' % (commandtype,self.factory.channel,command,arguments))
+                log.msg('\t\t> > > %s -id %s -%s %s' % (commandtype,self.factory.channel,command,arguments))
                 self.transport.write('%s -id %s -%s %s\n' % (commandtype,self.factory.channel,command,arguments))
             elif command:
-                log.msg('-> Sending %s -id %s -%s' % (commandtype,self.factory.channel,command))
+                log.msg('\t\t> > > %s -id %s -%s' % (commandtype,self.factory.channel,command))
                 self.transport.write('%s -id %s -%s\n' % (commandtype,self.factory.channel,command))
             else:
-                log.msg('-> Sending %s -id %s' % (commandtype,self.factory.channel))
-                self.transport.write('%s -id %s\n' % (commandtype,self.factory.channel))
+                if commandtype == 'notify':
+                    log.msg('\t\t> > > %s' % (commandtype))
+                    self.transport.write('%s\n' % (commandtype))
+                else:
+                    log.msg('\t\t> > > %s -id %s' % (commandtype,self.factory.channel))
+                    self.transport.write('%s -id %s\n' % (commandtype,self.factory.channel))
         else:
             if arguments:
                 self.commandQueue.append(':::'.join([commandtype,command,arguments]))
@@ -187,7 +191,8 @@ class BMDSSLineProtocol(LineReceiver):
             
     def lineReceived(self,line):
         """docstring for lineReceived"""
-        log.msg("<- " +line)
+        log.msg("\t\t< < < " +line)
+
         if self.initializing:
             if line.startswith('arrived'):
                 paras = line.split(' ')
@@ -220,14 +225,12 @@ class BMDSSLineProtocol(LineReceiver):
                      log.msg('<- Encoding settings will be okay')
                  elif self.lastCommandType == 'set' and self.lastCommand == 'encoding':
                      log.msg('<- Encoding settings are okay')
-                     self.factory.setupComplete = True
                      self.encodingSet = True
+                     self.factory.setupComplete = True
                  elif self.lastCommandType == 'stop':
                      log.msg('<- Encoder stoping')
                  elif self.lastCommandType == 'start':
                      log.msg('<- Encoder starting')
-                 else:
-                     log.msg(line)
             elif(line == 'device: %s encoding' % self.factory.channel):
                 self.factory.deviceStatus = 'encoding'
                 self.printDeviceStatus()
@@ -241,6 +244,8 @@ class BMDSSLineProtocol(LineReceiver):
                     self.stopEncodingDeferred.callback(None)
                 except:
                     pass
+            elif(line.startswith('Error')):
+                log.err('Problem communicating with device. : %s' % line)
             elif(line == 'device: %s booting' % self.factory.channel):
                 self.factory.deviceStatus = 'booting'
                 self.printDeviceStatus()
@@ -329,13 +334,16 @@ class BMDSSDataFactory(ReconnectingClientFactory):
             #print self.signalingFactory
             #print self.signalingFactory.deviceStatus
             reactor.callLater(2,self.startReceiver)
+
+
         
 class AtemStudioClient(foundation.KNInlet, service.MultiService):    
     """Connects to a Blackmagic Atem TV Studio and receives the captured video"""
     implements(service.IServiceCollection)
 
-    def __init__(self,host='localhost',port=13823):
+    def __init__(self,host='localhost',port=13824):
         super(AtemStudioClient,self).__init__(name='AtemStudioClient')
+        self.log = logging.getLogger('Atem %s:%s' % (host,port))
         self.host = host
         self.port = port
         self.services = []
@@ -346,22 +354,28 @@ class AtemStudioClient(foundation.KNInlet, service.MultiService):
         self.atemDataFactory = BMDSSDataFactory()
         self.atemDataFactory.service = self
             
-        atemSignalling = internet.TCPClient(self.host, self.port, self.atemSignallingFactory)
-        atemData = internet.TCPClient(self.host, self.port, self.atemDataFactory)
+
         
-        atemSignalling.setName('Atem Signalling Connection')
-        atemSignalling.setServiceParent(self)
-        atemData.setName('Atem Data Connection')
-        atemData.setServiceParent(self)
+        self.log.debug('Setup complete')
+
+        # atemSignalling.setName('Atem Signalling Connection')
+        # atemSignalling.setServiceParent(self)
+        # atemData.setName('Atem Data Connection')
+        # atemData.setServiceParent(self)
 
 
     def _willStart(self):
+        """Preparations"""
         self.atemDataFactory.setSignaling(self.atemSignallingFactory)
 
         
     def _start(self):
         log.msg("Starting %s" % self)
-        self.startService()
+        atemSignalling = internet.TCPClient(self.host, self.port, self.atemSignallingFactory)
+        atemData = internet.TCPClient(self.host, self.port, self.atemDataFactory)
+        atemSignalling.startService()
+        atemData.startService()
+
         self.atemDataFactory.startReceiver()
 
 
@@ -399,10 +413,8 @@ print "Hostname %s" % kniveServerHostname
 
 
         
-application = service.Application("Blackmagic DSS Client")
 atemClient = AtemStudioClient()
-atemClient.setName('atem')
-atemClient.setServiceParent(application)
+
 
 #-vcodec libx264 -vpre veryfast -vpre main -b 500k -crf 22 -threads 0 -level 30 -r 25 -g 25 -async 2 -
 #masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("fast","main"),crf="22",b='800k',maxrate='1100k',bufsize='1100k',threads=0,level="30",r=25,g=25,acodec='copy',f="mpegts"))
