@@ -418,7 +418,7 @@ atemClient = AtemStudioClient()
 
 #-vcodec libx264 -vpre veryfast -vpre main -b 500k -crf 22 -threads 0 -level 30 -r 25 -g 25 -async 2 -
 #masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("fast","main"),crf="22",b='800k',maxrate='1100k',bufsize='1100k',threads=0,level="30",r=25,g=25,acodec='copy',f="mpegts"))
-masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("veryfast","main"),crf="24",b='1000k',maxrate='1200k',bufsize='1200k',threads=0,level="30",r=25,g=25,acodec='copy',f="mpegts"))
+masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("veryfast","main"),crf="27",b='300k',maxrate='350k',bufsize='350k',threads=0,level="30",r=25,g=25,async=2,acodec='libfaac',ab='128k',f="mpegts"))
 
 # masterEncoder.delegate.addOutlet(files.FileWriter('/var/tmp/',filename='atem_encoded',suffix='.ts'))
 masterEncoder.addOutlet(tcpts.TCPTSClient(kniveServerHostname,3333,secret='123123asd'))
