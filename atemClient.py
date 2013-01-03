@@ -437,10 +437,10 @@ else:
 
 # Atem TV Studios h264 encoder isn't very good. x264 is faaar better. Therefore we request the data from atem in a very high bitrate and do the real encoding our self.
 # The encoding settings here produce the video/audio stream that will be written to a local file and/or sent to a TCPTSServer instance
-masterEncoder = ffmpeg.FFMpeg(ffmpegbin=ffmpegbinpath,encoderArguments=dict(vcodec="libx264",vpre=("normal","main"),crf="27",b='1000k',maxrate='1000k',bufsize='1000k',threads=0,level="30",r=25,g=25,async=2,acodec='libfaac',ab='128k',f="mpegts"))
+masterEncoder = ffmpeg.FFMpeg(ffmpegbin=ffmpegbinpath,encoderArguments=dict(vcodec="libx264",vprofile="main",crf="27",b='1000k',maxrate='1000k',bufsize='1000k',threads=0,level="30",r=25,g=25,async=2,acodec='libfaac',ab='128k',f="mpegts"))
 
 # Save the encoded file locally. Just to be extra safe. 
-masterEncoder.addOutlet(files.FileWriter('../',filename='atem_encoded',suffix='.ts'))
+masterEncoder.addOutlet(files.FileWriter('../',filename='atem_encoded',suffix='.ts',keepFiles=5))
 
 # Send the stream to a remove TCPTSServer Instance
 masterEncoder.addOutlet(tcpts.TCPTSClient(kniveServerHostname,kniveServerPort,secret=kniveServerSecret))

@@ -55,7 +55,7 @@ class FileWriter(KNOutlet):
         def checkAndMove(filename,offset=0):
             if os.path.isfile(self._outfileName) and offset <= self.keepFiles:
                 offset += 1
-                newFileName = self.outdir + os.path.sep + self.filename[:-(len(self.suffix))] + '.%s%s' % (offset,self.suffix)
+                newFileName = self.outdir + os.path.sep + os.path.basename(self.filename[:-(len(self.suffix))]) + '.%s%s' % (offset,self.suffix)
                 checkAndMove(newFileName,offset)
                 if os.path.isfile(filename):
                     shutil.move(filename,newFileName)
@@ -87,7 +87,6 @@ class FileWriter(KNOutlet):
         
     def dataReceived(self,data):
         """docstring for writeData"""
-        print "data received %s" % len(data)
         fdesc.writeToFD(self.outfile,data)
     
     def writeData(self,data):
