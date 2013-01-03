@@ -19,10 +19,12 @@ Go to http://connect.apple.com download and install the Command Line Utilities f
 Atemclient
 --------------
 Install required packages using brew
+
     brew install git
     brew install ffmpeg
 
 Checkout the latest version of atemclient from github. Change your working directory to a desired installation path.
+
     cd ~
     git clone https://github.com/kyrios/atemclient.git
 
@@ -36,7 +38,10 @@ Running atemClient
 ==============
 make sure the AtemTV Studio is connected to your computer and turned on.
 Start atemclient with some ‘secret’ and the endpoint location.
+
     ./atemClient.py knivebackend.example.com:3333 thisIsMySecr3t
+
+AtemClient should now send data to your backend.
 
 
 
