@@ -419,8 +419,13 @@ atemClient = AtemStudioClient()
 try:
     ffmpegbinpath = config.get('Paths','ffmpeg')
 except Exception, e:
-    ffmpegbinpath = procutils.which('ffmpeg')[0]
-    print 'Using ffmpeg: "%s"' % ffmpegbinpath
+    try:
+        ffmpegbinpath = procutils.which('ffmpeg')[0]
+    except:
+        print "Can't find ffmpeg anywhere. Make sure it's installed or specify the exact location."
+        sys.exit(1)
+    else:
+        print 'Using ffmpeg: "%s"' % ffmpegbinpath
 else:
     pass
 
