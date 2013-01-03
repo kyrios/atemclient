@@ -27,8 +27,6 @@ import sys, os
 #     knivedir = scriptdir + os.path.sep + 'knive'
 #     sys.path.insert(0,knivedir)
 
-print sys.path
-
 from knive import foundation
 from knive import files
 from knive import ffmpeg
@@ -394,14 +392,18 @@ config.add_section('General')
 
 def usage(exitPar=1):
     """docstring for usage"""
-    print "Usage: %s [options] <hostname>" % scriptname
+    print "Usage: %s <hostname:port> <secret>" % scriptname
+    print "hostname:port    The knive backend server address and port. e.g. server.example.com:3333"
+    print "secret           The string used for authentication. Must match the servers secret. e.g. asd123sd..23"
     if exitPar:
         sys.exit(1)
 
 startupargs = sys.argv
 scriptname = startupargs.pop(0)
 try:
-    kniveServerHostname = startupargs.pop()
+    kniveServerSecret = startupargs.pop()
+    kniveServerHostname, kniveServerPort = startupargs.pop().split(':')
+    kniveServerPort = int(kniveServerPort)
 except IndexError:
     usage()
 print "Hostname %s" % kniveServerHostname
@@ -421,12 +423,27 @@ except Exception, e:
     print 'Using ffmpeg: "%s"' % ffmpegbinpath
 else:
     pass
-masterEncoder = ffmpeg.FFMpeg(ffmpegbin=ffmpegbinpath,encoderArguments=dict(vcodec="libx264",vpre=("normal","main"),crf="27",b='300k',maxrate='350k',bufsize='350k',threads=0,level="30",r=25,g=25,async=2,acodec='libfaac',ab='128k',f="mpegts"))
+
+###############################
+######## CONFIGURATION ########
+###############################
+
+
+
+# Atem TV Studios h264 encoder isn't very good. x264 is faaar better. Therefore we request the data from atem in a very high bitrate and do the real encoding our self.
+# The encoding settings here produce the video/audio stream that will be written to a local file and/or sent to a TCPTSServer instance
+masterEncoder = ffmpeg.FFMpeg(ffmpegbin=ffmpegbinpath,encoderArguments=dict(vcodec="libx264",vpre=("normal","main"),crf="27",b='1000k',maxrate='1000k',bufsize='1000k',threads=0,level="30",r=25,g=25,async=2,acodec='libfaac',ab='128k',f="mpegts"))
+
+# Save the encoded file locally. Just to be extra safe. 
 masterEncoder.addOutlet(files.FileWriter('../',filename='atem_encoded',suffix='.ts'))
-masterEncoder.addOutlet(tcpts.TCPTSClient(kniveServerHostname,3333,secret='123123asd'))
+
+# Send the stream to a remove TCPTSServer Instance
+masterEncoder.addOutlet(tcpts.TCPTSClient(kniveServerHostname,kniveServerPort,secret=kniveServerSecret))
+
+
+#### END OF CONFIGURATION
+
+
 masterEncoder.setInlet(atemClient)
-
-
-
 atemClient.start()
 reactor.run()
