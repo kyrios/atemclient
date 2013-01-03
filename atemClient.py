@@ -21,26 +21,30 @@
 # SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+import sys, os
+# try:
+#     scriptdir = os.path.dirname(os.path.realpath(__file__))
+#     knivedir = scriptdir + os.path.sep + 'knive'
+#     sys.path.insert(0,knivedir)
+
+print sys.path
+
 from knive import foundation
-# from knive import files
+from knive import files
 from knive import ffmpeg
 from knive import tcpts
-from zope.interface         import implements
-from twisted.application            import service, internet
-from twisted.internet.protocol      import ReconnectingClientFactory, Protocol
-from twisted.protocols.basic        import LineReceiver
-from twisted.python                 import log, usage
-from twisted.internet               import reactor
-from twisted.internet.defer         import Deferred
+from zope.interface import implements
+from twisted.application import service, internet
+from twisted.internet.protocol import ReconnectingClientFactory, Protocol
+from twisted.protocols.basic import LineReceiver
+from twisted.python import log, usage, procutils
+from twisted.internet import reactor
+from twisted.internet.defer import Deferred
+
 
 import types
 import ConfigParser
 import logging
-import sys
-
-
-
-
 
 
 class BMDSSDataProtocol(Protocol):
@@ -49,27 +53,24 @@ class BMDSSDataProtocol(Protocol):
     iterations = 0
     lastBytes = 0
     service = None
-    
-    # def connectionMade(self):
-    #     """docstring for conn"""
-    #     log.msg("Connection established")
-    
+
     def startReceiving(self):
         """docstring for start"""
         log.msg("Starting stream receiver")
         self.transport.write('receive -id %s -transport tcp\n' % self.factory.signalingFactory.channel)
         self.progress()
+
     def dataReceived(self,data):
         """docstring for dataReceived"""
         self.bytes += len(data)
         self.factory.service.sendDataToAllOutlets(data)
-        
+
     def progress(self):
         """docstring for progress"""
         self.iterations += 1
         deltabytes = self.bytes - self.lastBytes
         self.lastBytes = self.bytes
-        log.msg("Received %s bytes (%s kbps) from BM Atem TV Studio" % (deltabytes,deltabytes/5*8/1024))
+        log.msg("Received %s bytes (%s kbps) from BM Atem TV Studio" % (deltabytes,deltabytes / 5 * 8 / 1024))
         reactor.callLater(5,self.progress)
 
 class BMDSSLineProtocol(LineReceiver):
@@ -82,17 +83,17 @@ class BMDSSLineProtocol(LineReceiver):
     stopEncodingDeferred = None
     encodingSet = False
     gotResponse = True
-    
+
     def connectionMade(self):
         log.msg("Connection established")
         self.delimiter = '\n'
-        self.sendCommand('notify',force=True)
-        self.sendCommand('get','device')
-        self.sendCommand('get','encoding')
-        self.sendCommand('validate','encoding','-fps 50p -srcx 0 -srcy 0 -srcw 1280 -srch 720 -dstw 1280 -dsth 720 -vkbps 5500 -profile high -level 40 -cabac 1 -bframes 1 -arate 48000 -achannels 2 -abits 16 -akbps 256 -preset 1')
-        self.sendCommand('set','encoding','-fps 50p -srcx 0 -srcy 0 -srcw 1280 -srch 720 -dstw 1280 -dsth 720 -vkbps 5500 -profile high -level 40 -cabac 1 -bframes 1 -arate 48000 -achannels 2 -abits 16 -akbps 256 -preset 1')
+        self.sendCommand('notify', force=True)
+        self.sendCommand('get', 'device')
+        self.sendCommand('get', 'encoding')
+        self.sendCommand('validate', 'encoding', '-fps 50p -srcx 0 -srcy 0 -srcw 1280 -srch 720 -dstw 1280 -dsth 720 -vkbps 5500 -profile high -level 40 -cabac 1 -bframes 1 -arate 48000 -achannels 2 -abits 16 -akbps 256 -preset 1')
+        self.sendCommand('set', 'encoding', '-fps 50p -srcx 0 -srcy 0 -srcw 1280 -srch 720 -dstw 1280 -dsth 720 -vkbps 5500 -profile high -level 40 -cabac 1 -bframes 1 -arate 48000 -achannels 2 -abits 16 -akbps 256 -preset 1')
         #reactor.callLater(10,self.stopEncoding)
-        
+
     def workFromQueue(self):
         """docstring for workFromQueue"""
         if len(self.commandQueue) > 0:
@@ -341,7 +342,7 @@ class AtemStudioClient(foundation.KNInlet, service.MultiService):
     """Connects to a Blackmagic Atem TV Studio and receives the captured video"""
     implements(service.IServiceCollection)
 
-    def __init__(self,host='localhost',port=13824):
+    def __init__(self,host='localhost',port=13823):
         super(AtemStudioClient,self).__init__(name='AtemStudioClient')
         self.log = logging.getLogger('Atem %s:%s' % (host,port))
         self.host = host
@@ -380,19 +381,14 @@ class AtemStudioClient(foundation.KNInlet, service.MultiService):
 
 
 
-        
-        
-        
 logging.basicConfig(level=logging.DEBUG)
 observer = log.PythonLoggingObserver()
 observer.start()
 
 config = ConfigParser.SafeConfigParser()
-
 config.add_section('Paths')
-config.set('Paths','ffmpeg','/Users/thorstenphilipp/Dropbox/projects/HTTP-Live-Streaming/build/bin/ffmpeg')
-config.set('Paths','segmenter','../build/bin/live_segmenter')
-config.set('Paths','segment_dir','/Users/thorstenphilipp/Sites')
+# config.set('Paths','ffmpeg','/home/kyrios/tpffmpeg/build/bin/ffmpeg')
+
 
 config.add_section('General')
 
@@ -412,21 +408,25 @@ print "Hostname %s" % kniveServerHostname
 
 
 
-        
+
 atemClient = AtemStudioClient()
 
 
 #-vcodec libx264 -vpre veryfast -vpre main -b 500k -crf 22 -threads 0 -level 30 -r 25 -g 25 -async 2 -
 #masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("fast","main"),crf="22",b='800k',maxrate='1100k',bufsize='1100k',threads=0,level="30",r=25,g=25,acodec='copy',f="mpegts"))
-masterEncoder = ffmpeg.FFMpeg(ffmpegbin=config.get('Paths','ffmpeg'),encoderArguments=dict(vcodec="libx264",vpre=("veryfast","main"),crf="27",b='300k',maxrate='350k',bufsize='350k',threads=0,level="30",r=25,g=25,async=2,acodec='libfaac',ab='128k',f="mpegts"))
-
-# masterEncoder.delegate.addOutlet(files.FileWriter('/var/tmp/',filename='atem_encoded',suffix='.ts'))
+try:
+    ffmpegbinpath = config.get('Paths','ffmpeg')
+except Exception, e:
+    ffmpegbinpath = procutils.which('ffmpeg')[0]
+    print 'Using ffmpeg: "%s"' % ffmpegbinpath
+else:
+    pass
+masterEncoder = ffmpeg.FFMpeg(ffmpegbin=ffmpegbinpath,encoderArguments=dict(vcodec="libx264",vpre=("normal","main"),crf="27",b='300k',maxrate='350k',bufsize='350k',threads=0,level="30",r=25,g=25,async=2,acodec='libfaac',ab='128k',f="mpegts"))
+masterEncoder.addOutlet(files.FileWriter('../',filename='atem_encoded',suffix='.ts'))
 masterEncoder.addOutlet(tcpts.TCPTSClient(kniveServerHostname,3333,secret='123123asd'))
 masterEncoder.setInlet(atemClient)
 
 
 
 atemClient.start()
-
-
 reactor.run()
